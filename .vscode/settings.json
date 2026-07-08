@@ -1,0 +1,13 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.import.gradle.enabled": true,
+  "java.import.gradle.wrapper.enabled": true,
+  "java.jdt.ls.java.home": "/usr/lib/jvm/java-21-openjdk-amd64",
+  "gradle.wrapperEnabled": true,
+  "terminal.integrated.env.linux": {
+    "ANDROID_HOME": "/home/ahmad/Android/Sdk",
+    "ANDROID_SDK_ROOT": "/home/ahmad/Android/Sdk",
+    "JAVA_HOME": "/usr/lib/jvm/java-21-openjdk-amd64",
+    "PATH": "/home/ahmad/Android/Sdk/platform-tools:/home/ahmad/Android/Sdk/emulator:/home/ahmad/Android/Sdk/cmdline-tools/latest/bin:${env:PATH}"
+  }
+}
