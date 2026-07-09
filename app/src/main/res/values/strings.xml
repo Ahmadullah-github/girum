@@ -1,4 +1,3 @@
 <resources>
-    <string name="app_name">girum</string>
-    <string name="ready_message">Android environment is ready.</string>
+    <string name="app_name">Girum</string>
 </resources>
