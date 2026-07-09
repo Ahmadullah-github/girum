@@ -45,6 +45,22 @@ interface DownloadDao {
     @Query(
         """
         UPDATE downloads
+        SET title = :title,
+            outputName = :outputName,
+            updatedAt = :updatedAt
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateTitle(
+        id: String,
+        title: String,
+        outputName: String,
+        updatedAt: Long = System.currentTimeMillis(),
+    )
+
+    @Query(
+        """
+        UPDATE downloads
         SET status = :status,
             downloadedBytes = :downloadedBytes,
             totalBytes = :totalBytes,

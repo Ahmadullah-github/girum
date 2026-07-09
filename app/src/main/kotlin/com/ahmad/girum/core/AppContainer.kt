@@ -44,6 +44,5 @@ class AppContainer(context: Context) {
         context = appContext,
         dao = database.downloadDao(),
         analyzer = urlAnalyzer,
-        mediaEngine = mediaEngine,
     )
 }

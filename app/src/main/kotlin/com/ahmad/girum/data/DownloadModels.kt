@@ -7,6 +7,7 @@ enum class DownloadStatus {
     COMPLETED,
     FAILED,
     CANCELED,
+    EXPANDED,
 }
 
 enum class DownloadPlatform {
@@ -17,6 +18,7 @@ enum class DownloadPlatform {
 enum class DownloadType {
     DIRECT_FILE,
     YOUTUBE_VIDEO,
+    YOUTUBE_PLAYLIST,
     YOUTUBE_PLAYLIST_ITEM,
 }
 

@@ -40,7 +40,10 @@ class YtDlpMediaEngine(
         FileNamePolicy.sanitize(info.title ?: info.fulltitle ?: "YouTube video", "YouTube video")
     }
 
-    suspend fun playlistEntries(url: String): List<MediaEntry> = withContext(Dispatchers.IO) {
+    suspend fun playlistEntries(
+        url: String,
+        processId: String = "playlist-${UUID.randomUUID()}",
+    ): List<MediaEntry> = withContext(Dispatchers.IO) {
         initialize()
         val request = YoutubeDLRequest(url)
             .addOption("--flat-playlist")
@@ -48,7 +51,7 @@ class YtDlpMediaEngine(
             .addOption("--ignore-errors")
         val response = YoutubeDL.execute(
             request = request,
-            processId = "playlist-${UUID.randomUUID()}",
+            processId = processId,
             redirectErrorStream = true,
             callback = null,
         )
@@ -77,53 +80,68 @@ class YtDlpMediaEngine(
 
     suspend fun download(item: DownloadItemEntity) = withContext(Dispatchers.IO) {
         initialize()
+        val preparedItem = prepareMetadata(item)
         val workDir = storageWriter.mediaWorkDir(item.id)
         workDir.listFiles()?.forEach { it.deleteRecursively() }
-        val request = YoutubeDLRequest(item.sourceUrl)
+        val request = YoutubeDLRequest(preparedItem.sourceUrl)
             .addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
             .addOption("--merge-output-format", "mp4")
             .addOption("--newline")
             .addOption("--no-mtime")
             .addOption("-o", File(workDir, "%(title).160B.%(ext)s").absolutePath)
         dao.updateProgress(
-            id = item.id,
+            id = preparedItem.id,
             status = DownloadStatus.RUNNING.name,
-            downloadedBytes = item.downloadedBytes,
-            totalBytes = item.totalBytes,
+            downloadedBytes = preparedItem.downloadedBytes,
+            totalBytes = preparedItem.totalBytes,
             speedBytesPerSecond = 0L,
             etaSeconds = -1L,
-            progress = item.progress,
+            progress = preparedItem.progress,
             tempPath = workDir.absolutePath,
         )
+        var lastProgressUpdateAt = 0L
+        var lastDownloadedBytes = preparedItem.downloadedBytes
+        var lastTotalBytes = preparedItem.totalBytes
+        var lastSpeedBytesPerSecond = 0L
+        var lastEtaSeconds = -1L
         YoutubeDL.execute(
             request = request,
-            processId = item.id,
+            processId = preparedItem.id,
             redirectErrorStream = true,
-        ) { progress, eta, _ ->
-            val normalizedProgress = (progress / 100f).coerceIn(0f, 1f)
+        ) { progress, eta, line ->
+            val now = System.currentTimeMillis()
+            if (now - lastProgressUpdateAt < PROGRESS_UPDATE_INTERVAL_MS && progress < 100f) {
+                return@execute
+            }
+            lastProgressUpdateAt = now
+            val update = YtDlpProgressParser.parse(progress, eta, line)
+            lastTotalBytes = update.totalBytes ?: lastTotalBytes
+            lastDownloadedBytes = update.downloadedBytes ?: lastDownloadedBytes
+            lastSpeedBytesPerSecond = update.speedBytesPerSecond ?: lastSpeedBytesPerSecond
+            lastEtaSeconds = update.etaSeconds ?: lastEtaSeconds
             kotlinx.coroutines.runBlocking {
                 dao.updateProgress(
-                    id = item.id,
+                    id = preparedItem.id,
                     status = DownloadStatus.RUNNING.name,
-                    downloadedBytes = item.downloadedBytes,
-                    totalBytes = item.totalBytes,
-                    speedBytesPerSecond = 0L,
-                    etaSeconds = eta,
-                    progress = normalizedProgress,
+                    downloadedBytes = lastDownloadedBytes,
+                    totalBytes = lastTotalBytes,
+                    speedBytesPerSecond = lastSpeedBytesPerSecond,
+                    etaSeconds = lastEtaSeconds,
+                    progress = update.progress,
                     tempPath = workDir.absolutePath,
                 )
             }
         }
         val output = newestMediaFile(workDir)
             ?: throw IllegalStateException("yt-dlp finished but no output file was created")
-        val safeName = FileNamePolicy.sanitize(output.name, item.outputName)
+        val safeName = FileNamePolicy.sanitize(output.name, preparedItem.outputName)
         val uri = storageWriter.promote(
             tempFile = output,
             outputName = safeName,
-            categoryName = if (item.type.contains("PLAYLIST")) DownloadCategory.PLAYLISTS.name else item.category,
+            categoryName = if (preparedItem.type.contains("PLAYLIST")) DownloadCategory.PLAYLISTS.name else preparedItem.category,
         )
         dao.markCompleted(
-            id = item.id,
+            id = preparedItem.id,
             status = DownloadStatus.COMPLETED.name,
             title = safeName,
             outputName = safeName,
@@ -134,6 +152,18 @@ class YtDlpMediaEngine(
         workDir.deleteRecursively()
     }
 
+    private suspend fun prepareMetadata(item: DownloadItemEntity): DownloadItemEntity {
+        if (!item.title.startsWith("Preparing")) return item
+        val title = runCatching { videoTitle(item.sourceUrl) }.getOrDefault(item.title)
+        val outputName = FileNamePolicy.extensionOrDefault(title, "mp4")
+        dao.updateTitle(
+            id = item.id,
+            title = title,
+            outputName = outputName,
+        )
+        return item.copy(title = title, outputName = outputName)
+    }
+
     fun cancel(processId: String) {
         YoutubeDL.destroyProcessById(processId)
     }
@@ -142,5 +172,9 @@ class YtDlpMediaEngine(
         return workDir.walkTopDown()
             .filter { it.isFile && !it.name.endsWith(".part") && !it.name.endsWith(".ytdl") }
             .maxByOrNull { it.lastModified() }
+    }
+
+    companion object {
+        private const val PROGRESS_UPDATE_INTERVAL_MS = 500L
     }
 }

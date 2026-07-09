@@ -12,6 +12,7 @@ class QueueStatsCalculatorTest {
             item(DownloadStatus.PAUSED),
             item(DownloadStatus.COMPLETED),
             item(DownloadStatus.FAILED),
+            item(DownloadStatus.EXPANDED),
         )
 
         val stats = QueueStatsCalculator.from(items)

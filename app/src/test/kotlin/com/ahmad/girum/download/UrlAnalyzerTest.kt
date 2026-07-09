@@ -23,8 +23,22 @@ class UrlAnalyzerTest {
     }
 
     @Test
+    fun identifiesYoutubeShortsAsVideo() {
+        val result = analyzer.analyze("https://www.youtube.com/shorts/abc123?si=shared")
+
+        assertEquals(LinkKind.YOUTUBE_VIDEO, result.kind)
+    }
+
+    @Test
     fun identifiesYoutubePlaylist() {
         val result = analyzer.analyze("https://www.youtube.com/watch?v=abc123&list=PL123")
+
+        assertEquals(LinkKind.YOUTUBE_PLAYLIST, result.kind)
+    }
+
+    @Test
+    fun identifiesExplicitPlaylistUrl() {
+        val result = analyzer.analyze("https://youtube.com/playlist?list=PL123")
 
         assertEquals(LinkKind.YOUTUBE_PLAYLIST, result.kind)
     }
@@ -34,6 +48,21 @@ class UrlAnalyzerTest {
         val result = analyzer.extractUrl("Watch this: https://example.com/file.zip.")
 
         assertEquals("https://example.com/file.zip", result)
+    }
+
+    @Test
+    fun acceptsBareDomainsAndNormalizesScheme() {
+        val result = analyzer.analyze("youtube.com/watch?v=abc123")
+
+        assertEquals(LinkKind.YOUTUBE_VIDEO, result.kind)
+        assertEquals("https://youtube.com/watch?v=abc123", result.url)
+    }
+
+    @Test
+    fun ignoresUnsupportedSchemes() {
+        val result = analyzer.analyze("ftp://example.com/file.zip")
+
+        assertEquals(LinkKind.UNSUPPORTED, result.kind)
     }
 
     @Test

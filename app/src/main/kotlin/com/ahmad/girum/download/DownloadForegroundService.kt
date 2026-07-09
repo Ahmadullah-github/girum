@@ -7,9 +7,11 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import com.ahmad.girum.GirumApplication
+import com.ahmad.girum.data.DownloadCategory
 import com.ahmad.girum.data.DownloadItemEntity
 import com.ahmad.girum.data.DownloadPlatform
 import com.ahmad.girum.data.DownloadStatus
+import com.ahmad.girum.data.DownloadType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +102,13 @@ class DownloadForegroundService : Service() {
             try {
                 when (item.platform) {
                     DownloadPlatform.DIRECT.name -> container.directDownloader.download(item)
-                    DownloadPlatform.YOUTUBE.name -> container.mediaEngine.download(item)
+                    DownloadPlatform.YOUTUBE.name -> {
+                        if (item.type == DownloadType.YOUTUBE_PLAYLIST.name) {
+                            expandPlaylist(item)
+                        } else {
+                            container.mediaEngine.download(item)
+                        }
+                    }
                     else -> throw IllegalStateException("Unsupported platform ${item.platform}")
                 }
             } catch (cancelled: CancellationException) {
@@ -122,6 +130,45 @@ class DownloadForegroundService : Service() {
             }
         }
         activeJobs[item.id] = job
+    }
+
+    private suspend fun expandPlaylist(item: DownloadItemEntity) {
+        dao.updateProgress(
+            id = item.id,
+            status = DownloadStatus.RUNNING.name,
+            downloadedBytes = 0L,
+            totalBytes = -1L,
+            speedBytesPerSecond = 0L,
+            etaSeconds = -1L,
+            progress = 0f,
+            tempPath = null,
+        )
+        val entries = container.mediaEngine.playlistEntries(
+            url = item.sourceUrl,
+            processId = item.id,
+        )
+        if (entries.isEmpty()) {
+            throw IllegalStateException("Playlist has no downloadable items")
+        }
+        val total = entries.size
+        val playlistName = item.playlistTitle ?: item.title
+        val children = entries.mapIndexed { index, entry ->
+            val title = entry.title.ifBlank { "Playlist video ${index + 1}" }
+            DownloadItemEntity(
+                sourceUrl = entry.url,
+                title = title,
+                platform = DownloadPlatform.YOUTUBE.name,
+                type = DownloadType.YOUTUBE_PLAYLIST_ITEM.name,
+                status = DownloadStatus.QUEUED.name,
+                category = DownloadCategory.PLAYLISTS.name,
+                outputName = FileNamePolicy.extensionOrDefault(title, "mp4"),
+                playlistTitle = playlistName,
+                playlistIndex = index + 1,
+                playlistTotal = total,
+            )
+        }
+        dao.upsertAll(children)
+        dao.updateStatus(item.id, DownloadStatus.EXPANDED.name)
     }
 
     private suspend fun refreshNotification(queuedCount: Int) {

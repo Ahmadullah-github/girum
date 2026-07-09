@@ -16,7 +16,6 @@ class DownloadRepository(
     private val context: Context,
     private val dao: DownloadDao,
     private val analyzer: UrlAnalyzer,
-    private val mediaEngine: YtDlpMediaEngine,
 ) {
     val downloads: Flow<List<DownloadItemEntity>> = dao.observeAll()
 
@@ -71,7 +70,7 @@ class DownloadRepository(
     }
 
     private suspend fun enqueueYoutubeVideo(analysis: LinkAnalysis): EnqueueResult {
-        val title = runCatching { mediaEngine.videoTitle(analysis.url) }.getOrDefault("YouTube video")
+        val title = "Preparing YouTube video..."
         val item = DownloadItemEntity(
             sourceUrl = analysis.url,
             title = title,
@@ -87,27 +86,20 @@ class DownloadRepository(
     }
 
     private suspend fun enqueueYoutubePlaylist(analysis: LinkAnalysis): EnqueueResult {
-        val entries = mediaEngine.playlistEntries(analysis.url)
-        if (entries.isEmpty()) return EnqueueResult.Error("Playlist has no downloadable items")
-        val total = entries.size
-        val items = entries.mapIndexed { index, entry ->
-            val title = entry.title.ifBlank { "Playlist video ${index + 1}" }
-            DownloadItemEntity(
-                sourceUrl = entry.url,
-                title = title,
-                platform = DownloadPlatform.YOUTUBE.name,
-                type = DownloadType.YOUTUBE_PLAYLIST_ITEM.name,
-                status = DownloadStatus.QUEUED.name,
-                category = DownloadCategory.PLAYLISTS.name,
-                outputName = FileNamePolicy.extensionOrDefault(title, "mp4"),
-                playlistTitle = analysis.suggestedName,
-                playlistIndex = index + 1,
-                playlistTotal = total,
-            )
-        }
-        dao.upsertAll(items)
+        val title = "Preparing playlist..."
+        val item = DownloadItemEntity(
+            sourceUrl = analysis.url,
+            title = title,
+            platform = DownloadPlatform.YOUTUBE.name,
+            type = DownloadType.YOUTUBE_PLAYLIST.name,
+            status = DownloadStatus.QUEUED.name,
+            category = DownloadCategory.PLAYLISTS.name,
+            outputName = FileNamePolicy.extensionOrDefault(title, "mp4"),
+            playlistTitle = analysis.suggestedName,
+        )
+        dao.upsert(item)
         startWorker()
-        return EnqueueResult.Success(total, "Added $total playlist items")
+        return EnqueueResult.Success(1, "Added playlist for background analysis")
     }
 }
 
